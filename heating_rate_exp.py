@@ -1,12 +1,11 @@
 from artiq.language.core import kernel, delay, delay_mu, parallel
-from artiq.language.types import TInt32
+#from artiq.language.types import TInt32
 import include.base_experiment
 import include.std_data
-from dax.util.ccb import get_ccb_tool
+#from dax.util.ccb import get_ccb_tool
 from artiq.experiment import *
-
 import numpy as np
-import time
+#import time
 
 tlist = [] #list of different delay times
 loopcount = 10 #placeholder
@@ -25,6 +24,7 @@ class Heating_Rate(include.base_experiment.base_experiment):
 
 
     # \/ \/ \/ \/ \/ \/ build \/ \/ \/ \/ \/ \/
+
     def build(self):
         self.setattr_device("core")
         self.setattr_device("ccb")
@@ -38,12 +38,14 @@ class Heating_Rate(include.base_experiment.base_experiment):
         self.setattr_argument("bin_num",
             NumberValue(default=100, ndecimals=0, step=1))
 
-
         super().build()
+    
     # /\ /\ /\ /\ /\ /\ build /\ /\ /\ /\ /\ /\
 
 
+
     # \/ \/ \/ \/ \/ \/ prepare \/ \/ \/ \/ \/ \/
+
     def prepare(self):
         super().prepare()
 
@@ -57,23 +59,33 @@ class Heating_Rate(include.base_experiment.base_experiment):
         
         command = "${artiq_applet}plot_xy Counts"
         self.ccb.issue("create_applet", "Counts", command)
+    
     # /\ /\ /\ /\ /\ /\ prepare /\ /\ /\ /\ /\ /\
 
 
+
     # \/ \/ \/ \/ \/ \/ run \/ \/ \/ \/ \/ \/
+
     def run(self):
 
         for rt in tlist:
             self.krun(rt)
+            self.make_graphs(rt)
+            self.reset()
 
-        self.reset()
-        self.make_graphs()
         self.make_metadataset()
-
+        print("Finished")
 
 
     @kernel
     def krun(self, kt):
+        """
+        Short for kernel run.
+        Unlike the standard run(), which runs on the user's computer, krun() is run inside the device.
+        It can do (almost) all of the same things run() can.
+        It is an easier way to isolate the actual operation of the experiment (kernel-unique things) from generic operations such as initializing, resetting, or making graphs.
+        """
+
         dev = self.cool_422
         dev_repump = self.repump_1092
 
@@ -114,8 +126,6 @@ class Heating_Rate(include.base_experiment.base_experiment):
             self.mutate_dataset("Counts." + str(kt) + "_MASTER", thiskrun_master.index(masteritem), avgmaster)
 
 
-
-
 #    @kernel
 #    def analyze(self):
 
@@ -135,8 +145,13 @@ class Heating_Rate(include.base_experiment.base_experiment):
         self.std_cool_ion(leaveon=True)
     
     @kernel
-    def make_graphs(self):
+    def make_graphs(self, gt):
         for thist in tlist:
-            thismaster = "Counts." + str(thist) + "_MASTER"
-        self.count_plot.make(x=,y=,title = "Fluorescence @" + str(gt) + "ms")
+            thismaster = self.get_dataset("Counts." + str(thist) + "_MASTER") #I think this is an NDArray???
+            if thismaster.shape[0] == 1:
+                thislen = thismaster.shape[1]
+                x_list = list(range(thislen)) * self.bin_size
+                self.count_plot.make(x = x_list, y = thismaster.tolist(), title = "Fluorescence @" + str(gt) + "ms")
+            else:
+                print("Data output has bad shape, is a*n not 1*n.")
     # /\ /\ /\ /\ /\ /\ run /\ /\ /\ /\ /\ /\
