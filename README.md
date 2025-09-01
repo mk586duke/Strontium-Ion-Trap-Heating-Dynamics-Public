@@ -7,5 +7,6 @@ Made mostly for purposes of progress logging, versioning and backup.
 
 This is a manual mirror, updated from the main of my private every time there is a significant update.
 
-   Main experiment code writing - complete - Aug 2025
--> Experiment trials                         Sep 2025
+Main experiment code writing - complete - Aug 2025
+
+Experiment trials                         Sep 2025   <-   Here
