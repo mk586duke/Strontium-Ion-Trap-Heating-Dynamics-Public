@@ -8,10 +8,10 @@ import numpy as np
 #import time
 
 tlist = [] #list of different delay times
-loopcount = 10 #placeholder
 
 class Heating_Rate(include.base_experiment.base_experiment):
     """
+    Heating Rate Experiment
     Continuing from Norbert and Mika's codes.
     Using for my undergraduate thesis.
     """
@@ -20,7 +20,7 @@ class Heating_Rate(include.base_experiment.base_experiment):
     Initial testing starting Physics 495
     TMK Fall 2025
 
-    Test #1
+    Test #2
     """
 
 
@@ -34,6 +34,9 @@ class Heating_Rate(include.base_experiment.base_experiment):
             NumberValue(default=0.0001, ndecimals=0, step=1, unit="us"))
         
         self.setattr_argument("bin_num",
+            NumberValue(default=100, ndecimals=0, step=1))
+        
+        self.setattr_argument("loops",
             NumberValue(default=100, ndecimals=0, step=1))
 
         super().build()
@@ -52,7 +55,7 @@ class Heating_Rate(include.base_experiment.base_experiment):
 
         for t in tlist:
             self.set_dataset("Counts." + str(t) + "_MASTER", np.full(self.bin_num, float(np.nan)), broadcast=True, archive=True)
-            for i in range(loopcount):
+            for i in range(self.loops):
                 self.set_dataset("Counts." + str(t) + "_" + str(i), np.full(self.bin_num, float(np.nan)), broadcast=True, archive=True)
         
         command = "${artiq_applet}plot_xy Counts"
@@ -65,74 +68,75 @@ class Heating_Rate(include.base_experiment.base_experiment):
     # \/ \/ \/ \/ \/ \/ run \/ \/ \/ \/ \/ \/
 
     def run(self):
-
         for rt in tlist:
-            self.krun(rt)
+            srt = str(rt)
+            for thiscount in range(self.loops):
+                thisdb = "Counts." + srt + "_" + str(thiscount)
+                self.krun(rt, thisdb)
+                self.reset()
+    
+            self.analyze(rt)
             self.make_graphs(rt)
-            self.reset()
-
         self.make_metadataset()
         print("Finished")
 
+    def analyze(self, rt):
+        tmaster = [0] * (self.bin_num)
+        for i in range(self.loops):
+            thisiter = self.get_dataset("Counts." + str(rt) + "_" + str(i))
+            for j in range(self.bin_num):
+                tmaster[j] = tmaster[j] + thisiter[j]
+
+        for k in range(self.bin_num):
+            avgmaster = (tmaster[k]) / (self.loops)
+            self.mutate_dataset("Counts." + str(rt) + "_MASTER", k, avgmaster)
+
+
+    def make_graphs(self, gt):
+        thismaster = self.get_dataset("Counts." + str(gt) + "_MASTER") #I think this is an NDArray???
+        if thismaster.shape[0] == 1:
+            thislen = thismaster.shape[1]
+            xraw = list(range(thislen))
+            x_list = [i * (self.bin_size) for i in xraw]
+            self.count_plot.make(x = x_list, y = thismaster.tolist(), title = "Fluorescence @" + str(gt) + "ms")
+        else:
+            print("Data output has bad shape, is a*n not 1*n.")
+
+
 
     @kernel
-    def krun(self, kt):
+    def krun(self, kt, thisdb):
         """
         Short for kernel run.
         Unlike the standard run(), which runs on the user's computer, krun() is run inside the device.
         It can do (almost) all of the same things run() can.
-        It is an easier way to isolate the operations of the experiment (kernel-unique things) from generic operations such as initializing, resetting, or making graphs.
+        It is an easier way to isolate the operations of the experiment (kernel-unique things) from generic operations such as initializing, resetting, looping, or making graphs.
         """
-
-        dev = self.cool_422
-        dev_repump = self.repump_1092
-
-        thiskrun_master = [0] * self.bin_num
 
         self.init()
 
-        thiscount = 0
-        while thiscount in range(loopcount):
+        self.cool_422.sw.on()
+        self.repump_1092.sw.on()
+        delay(2*us)
+        self.all_switch_off() #if possible later implement 1092 off as last laser/device off to ensure no ions are in the dark state
 
-            thisdb = "Counts." + str(kt) + "_" + str(thiscount)
-            dev.sw.on()
-            dev_repump.sw.on()
-            delay(2*us)
-            self.all_switch_off() #if possible later implement 1092 off as last laser/device off to ensure no ions are in the dark state
+        delay(kt*ms)
 
-            delay(kt*ms)
-            print(str(kt))
+        self.ion_1092.sw.on()
+        delay_mu(8)
 
-            self.ion_1092.sw.on()
-            delay_mu(8)
+        with parallel:
+            gate_end_mu = self.pmt_counts.gate_rising(self.bin_size*s)
+            self.cool_422.sw.on()
+        count = self.pmt_counts.count(gate_end_mu)
+        self.mutate_dataset(thisdb, 0, count)
 
-            with parallel:
-                gate_end_mu = self.pmt_counts.gate_rising(self.bin_size*s)
-                self.cool_422.sw.on()
+        t=1
+        while t < self.bin_num:
+            gate_end_mu = self.pmt_counts.gate_rising(self.bin_size*s)
             count = self.pmt_counts.count(gate_end_mu)
-            self.mutate_dataset(thisdb, 0, count)
-
-            t=1
-            while t < self.bin_num:
-                gate_end_mu = self.pmt_counts.gate_rising(self.bin_size*s)
-                count = self.pmt_counts.count(gate_end_mu)
-                self.mutate_dataset(thisdb, t, count)
-                thiskrun_master[t] = thiskrun_master[t] + count
-                
-                t+=1
-            
-            thiscount+=1
-        
-        for masteritem in thiskrun_master:
-            avgmaster = masteritem / loopcount
-            self.mutate_dataset("Counts." + str(kt) + "_MASTER", thiskrun_master.index(masteritem), avgmaster)
-
-
-#    @kernel
-#    def analyze(self):
-# currently unused. The original plan was for this analyze function to house the master file conversion loop and to loop it for each wavelength.
-# the structure of experiment files limit this somewhat; the loop is now at the end of krun.
-
+            self.mutate_dataset(thisdb, t, count)
+            t+=1
 
     @kernel
     def init(self):
@@ -147,15 +151,5 @@ class Heating_Rate(include.base_experiment.base_experiment):
         self.all_switch_off() #urukul?
         #time reset
         self.std_cool_ion(leaveon=True)
-    
-    @kernel
-    def make_graphs(self, gt):
-        for thist in tlist:
-            thismaster = self.get_dataset("Counts." + str(thist) + "_MASTER") #I think this is an NDArray???
-            if thismaster.shape[0] == 1:
-                thislen = thismaster.shape[1]
-                x_list = list(range(thislen)) * self.bin_size
-                self.count_plot.make(x = x_list, y = thismaster.tolist(), title = "Fluorescence @" + str(gt) + "ms")
-            else:
-                print("Data output has bad shape, is a*n not 1*n.")
+
     # /\ /\ /\ /\ /\ /\ run /\ /\ /\ /\ /\ /\
