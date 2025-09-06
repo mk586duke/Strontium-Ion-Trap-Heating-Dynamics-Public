@@ -14,12 +14,13 @@ class Heating_Rate(include.base_experiment.base_experiment):
     """
     Continuing from Norbert and Mika's codes.
     Using for my undergraduate thesis.
-
-    TMK Fall 2025. Still untested.
     """
 
     """
     Initial testing starting Physics 495
+    TMK Fall 2025
+
+    Test #1
     """
 
 
@@ -28,9 +29,6 @@ class Heating_Rate(include.base_experiment.base_experiment):
     def build(self):
         self.setattr_device("core")
         self.setattr_device("ccb")
-
-        self.setattr_argument("t_heat",
-            NumberValue(default=0.1, unit="ms"))
         
         self.setattr_argument("bin_size",
             NumberValue(default=0.0001, ndecimals=0, step=1, unit="us"))
@@ -83,7 +81,7 @@ class Heating_Rate(include.base_experiment.base_experiment):
         Short for kernel run.
         Unlike the standard run(), which runs on the user's computer, krun() is run inside the device.
         It can do (almost) all of the same things run() can.
-        It is an easier way to isolate the actual operation of the experiment (kernel-unique things) from generic operations such as initializing, resetting, or making graphs.
+        It is an easier way to isolate the operations of the experiment (kernel-unique things) from generic operations such as initializing, resetting, or making graphs.
         """
 
         dev = self.cool_422
@@ -102,7 +100,8 @@ class Heating_Rate(include.base_experiment.base_experiment):
             delay(2*us)
             self.all_switch_off() #if possible later implement 1092 off as last laser/device off to ensure no ions are in the dark state
 
-            delay(self.t_heat)
+            delay(kt*ms)
+            print(str(kt))
 
             self.ion_1092.sw.on()
             delay_mu(8)
@@ -110,13 +109,16 @@ class Heating_Rate(include.base_experiment.base_experiment):
             with parallel:
                 gate_end_mu = self.pmt_counts.gate_rising(self.bin_size*s)
                 self.cool_422.sw.on()
-            
-            t=0
+            count = self.pmt_counts.count(gate_end_mu)
+            self.mutate_dataset(thisdb, 0, count)
+
+            t=1
             while t < self.bin_num:
+                gate_end_mu = self.pmt_counts.gate_rising(self.bin_size*s)
                 count = self.pmt_counts.count(gate_end_mu)
                 self.mutate_dataset(thisdb, t, count)
                 thiskrun_master[t] = thiskrun_master[t] + count
-
+                
                 t+=1
             
             thiscount+=1
@@ -128,6 +130,8 @@ class Heating_Rate(include.base_experiment.base_experiment):
 
 #    @kernel
 #    def analyze(self):
+# currently unused. The original plan was for this analyze function to house the master file conversion loop and to loop it for each wavelength.
+# the structure of experiment files limit this somewhat; the loop is now at the end of krun.
 
 
     @kernel
